@@ -1,15 +1,14 @@
-#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <string>
-#include <vector>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+
+#include <amazing/maze.h>
 
 #include "Camera.h"
 #include "Maze.h"
@@ -27,68 +26,10 @@ const char* CEILING_TEXTURE_PATH = "textures/ground.png";
 const float CELL_SIZE = 2.0f;
 const float WALL_HEIGHT = 2.5f;
 
-// ---------------------------------------------------------------------------
-// Mock do gerador de labirintos. Expõe a mesma interface do gerador
-// (get_width, get_height, cell(x, y).walls[Top, Right, Bottom, Left]) para que
-// possa ser substituído pela biblioteca sem alterar o resto do código.
-// ---------------------------------------------------------------------------
-const char* const MOCK_MAZE[] = {
-    "+---+---+---+---+---+---+---+---+",
-    "|   |           |   |           |",
-    "+   +---+   +   +   +   +---+   +",
-    "|           |   |   |   |   |   |",
-    "+---+---+---+   +   +   +   +   +",
-    "|           |   |   |       |   |",
-    "+---+   +   +   +   +---+   +   +",
-    "|       |   |   |           |   |",
-    "+   +---+---+   +   +---+---+   +",
-    "|           |   |       |       |",
-    "+   +---+   +   +---+---+   +   +",
-    "|       |                   |   |",
-    "+---+---+---+---+---+---+---+---+",
-};
-
-class MockMaze
-{
-public:
-    struct Cell
-    {
-        bool walls[4] = {true, true, true, true};
-    };
-
-    // Lê o formato "+---+" / "|   |": cada célula ocupa 4 colunas e 2 linhas.
-    template <std::size_t N>
-    explicit MockMaze(const char* const (&rows)[N])
-    {
-        static_assert(N >= 3 && N % 2 == 1, "mock precisa de 2*altura+1 linhas");
-        width = static_cast<int>((std::strlen(rows[0]) - 1) / 4);
-        height = static_cast<int>((N - 1) / 2);
-        grid.assign(static_cast<std::size_t>(width) * height, Cell{});
-
-        auto at = [&](std::size_t row, std::size_t col) {
-            return col < std::strlen(rows[row]) ? rows[row][col] : ' ';
-        };
-
-        for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x) {
-                Cell& c = cell(x, y);
-                c.walls[rats::Top] = at(2 * y, 4 * x + 1) == '-';
-                c.walls[rats::Bottom] = at(2 * y + 2, 4 * x + 1) == '-';
-                c.walls[rats::Left] = at(2 * y + 1, 4 * x) == '|';
-                c.walls[rats::Right] = at(2 * y + 1, 4 * x + 4) == '|';
-            }
-        }
-    }
-
-    int get_width() const { return width; }
-    int get_height() const { return height; }
-    Cell& cell(int x, int y) { return grid[static_cast<std::size_t>(y) * width + x]; }
-    const Cell& cell(int x, int y) const { return grid[static_cast<std::size_t>(y) * width + x]; }
-
-private:
-    int width = 0, height = 0;
-    std::vector<Cell> grid;
-};
+// Labirinto gerado pela biblioteca amazing (external/amazing).
+const int MAZE_WIDTH = 8;
+const int MAZE_HEIGHT = 6;
+const amazing::GenAlgo MAZE_ALGORITHM = amazing::GenAlgo::DFS;
 
 } // namespace
 
@@ -115,8 +56,9 @@ int main(int argc, char** argv)
         return EXIT_FAILURE;
     }
 
-    const MockMaze mock(MOCK_MAZE);
-    if (!maze.Build(rats::ToMazeLayout(mock))) {
+    amazing::Maze grid(MAZE_WIDTH, MAZE_HEIGHT);
+    grid.generate(MAZE_ALGORITHM);
+    if (!maze.Build(rats::ToMazeLayout(grid))) {
         std::fprintf(stderr, "Maze: layout invalido\n");
         return EXIT_FAILURE;
     }
