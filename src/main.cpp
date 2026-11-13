@@ -2,6 +2,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
+#include <vector>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -10,77 +12,83 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "Camera.h"
-#include "Mesh.h"
+#include "Maze.h"
 #include "Shader.h"
-#include "Texture.h"
 #include "Window.h"
 
 namespace {
 
 const char* VERTEX_SHADER_PATH = "shaders/vertex.glsl";
 const char* FRAGMENT_SHADER_PATH = "shaders/fragment.glsl";
-const char* BRICK_TEXTURE_PATH = "textures/brick.png";
-const char* GROUND_TEXTURE_PATH = "textures/ground.png";
+const char* WALL_TEXTURE_PATH = "textures/brick.png";
+const char* FLOOR_TEXTURE_PATH = "textures/ground.png";
+const char* CEILING_TEXTURE_PATH = "textures/ground.png";
 
-// Cubo unitário centrado na origem: 4 vértices por face (UVs independentes por face).
-// Layout: x, y, z, u, v
-const GLfloat CUBE_VERTICES[] = {
-    // frente (+Z)
-    -0.5f, -0.5f,  0.5f, 0.0f, 0.0f,
-     0.5f, -0.5f,  0.5f, 1.0f, 0.0f,
-     0.5f,  0.5f,  0.5f, 1.0f, 1.0f,
-    -0.5f,  0.5f,  0.5f, 0.0f, 1.0f,
-    // trás (-Z)
-     0.5f, -0.5f, -0.5f, 0.0f, 0.0f,
-    -0.5f, -0.5f, -0.5f, 1.0f, 0.0f,
-    -0.5f,  0.5f, -0.5f, 1.0f, 1.0f,
-     0.5f,  0.5f, -0.5f, 0.0f, 1.0f,
-    // esquerda (-X)
-    -0.5f, -0.5f, -0.5f, 0.0f, 0.0f,
-    -0.5f, -0.5f,  0.5f, 1.0f, 0.0f,
-    -0.5f,  0.5f,  0.5f, 1.0f, 1.0f,
-    -0.5f,  0.5f, -0.5f, 0.0f, 1.0f,
-    // direita (+X)
-     0.5f, -0.5f,  0.5f, 0.0f, 0.0f,
-     0.5f, -0.5f, -0.5f, 1.0f, 0.0f,
-     0.5f,  0.5f, -0.5f, 1.0f, 1.0f,
-     0.5f,  0.5f,  0.5f, 0.0f, 1.0f,
-    // topo (+Y)
-    -0.5f,  0.5f,  0.5f, 0.0f, 0.0f,
-     0.5f,  0.5f,  0.5f, 1.0f, 0.0f,
-     0.5f,  0.5f, -0.5f, 1.0f, 1.0f,
-    -0.5f,  0.5f, -0.5f, 0.0f, 1.0f,
-    // base (-Y)
-    -0.5f, -0.5f, -0.5f, 0.0f, 0.0f,
-     0.5f, -0.5f, -0.5f, 1.0f, 0.0f,
-     0.5f, -0.5f,  0.5f, 1.0f, 1.0f,
-    -0.5f, -0.5f,  0.5f, 0.0f, 1.0f,
+const float CELL_SIZE = 2.0f;
+const float WALL_HEIGHT = 2.5f;
+
+// ---------------------------------------------------------------------------
+// Mock do gerador de labirintos. Expõe a mesma interface do gerador
+// (get_width, get_height, cell(x, y).walls[Top, Right, Bottom, Left]) para que
+// possa ser substituído pela biblioteca sem alterar o resto do código.
+// ---------------------------------------------------------------------------
+const char* const MOCK_MAZE[] = {
+    "+---+---+---+---+---+---+---+---+",
+    "|   |           |   |           |",
+    "+   +---+   +   +   +   +---+   +",
+    "|           |   |   |   |   |   |",
+    "+---+---+---+   +   +   +   +   +",
+    "|           |   |   |       |   |",
+    "+---+   +   +   +   +---+   +   +",
+    "|       |   |   |           |   |",
+    "+   +---+---+   +   +---+---+   +",
+    "|           |   |       |       |",
+    "+   +---+   +   +---+---+   +   +",
+    "|       |                   |   |",
+    "+---+---+---+---+---+---+---+---+",
 };
 
-const GLuint CUBE_INDICES[] = {
-     0,  1,  2,   2,  3,  0,
-     4,  5,  6,   6,  7,  4,
-     8,  9, 10,  10, 11,  8,
-    12, 13, 14,  14, 15, 12,
-    16, 17, 18,  18, 19, 16,
-    20, 21, 22,  22, 23, 20,
-};
+class MockMaze
+{
+public:
+    struct Cell
+    {
+        bool walls[4] = {true, true, true, true};
+    };
 
-// Chão 20x20 no plano Y=0; UV vai até 10 para repetir a textura (GL_REPEAT)
-const GLfloat FLOOR_VERTICES[] = {
-    -10.0f, 0.0f, -10.0f,  0.0f,  0.0f,
-    -10.0f, 0.0f,  10.0f, 10.0f,  0.0f,
-     10.0f, 0.0f,  10.0f, 10.0f, 10.0f,
-     10.0f, 0.0f, -10.0f,  0.0f, 10.0f,
-};
+    // Lê o formato "+---+" / "|   |": cada célula ocupa 4 colunas e 2 linhas.
+    template <std::size_t N>
+    explicit MockMaze(const char* const (&rows)[N])
+    {
+        static_assert(N >= 3 && N % 2 == 1, "mock precisa de 2*altura+1 linhas");
+        width = static_cast<int>((std::strlen(rows[0]) - 1) / 4);
+        height = static_cast<int>((N - 1) / 2);
+        grid.assign(static_cast<std::size_t>(width) * height, Cell{});
 
-const GLuint FLOOR_INDICES[] = {
-    0, 1, 3,
-    1, 2, 3,
-};
+        auto at = [&](std::size_t row, std::size_t col) {
+            return col < std::strlen(rows[row]) ? rows[row][col] : ' ';
+        };
 
-template <typename T, std::size_t N>
-constexpr std::size_t CountOf(const T (&)[N]) { return N; }
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                Cell& c = cell(x, y);
+                c.walls[rats::Top] = at(2 * y, 4 * x + 1) == '-';
+                c.walls[rats::Bottom] = at(2 * y + 2, 4 * x + 1) == '-';
+                c.walls[rats::Left] = at(2 * y + 1, 4 * x) == '|';
+                c.walls[rats::Right] = at(2 * y + 1, 4 * x + 4) == '|';
+            }
+        }
+    }
+
+    int get_width() const { return width; }
+    int get_height() const { return height; }
+    Cell& cell(int x, int y) { return grid[static_cast<std::size_t>(y) * width + x]; }
+    const Cell& cell(int x, int y) const { return grid[static_cast<std::size_t>(y) * width + x]; }
+
+private:
+    int width = 0, height = 0;
+    std::vector<Cell> grid;
+};
 
 } // namespace
 
@@ -97,28 +105,31 @@ int main(int argc, char** argv)
     Window window(1024, 768, "rats");
     if (!window.Initialize()) return EXIT_FAILURE;
 
-    Mesh cube;
-    cube.Create(CUBE_VERTICES, CountOf(CUBE_VERTICES) / Mesh::FLOATS_PER_VERTEX,
-                CUBE_INDICES, CountOf(CUBE_INDICES));
-
-    Mesh ground;
-    ground.Create(FLOOR_VERTICES, CountOf(FLOOR_VERTICES) / Mesh::FLOATS_PER_VERTEX,
-                 FLOOR_INDICES, CountOf(FLOOR_INDICES));
-
     Shader shader;
     if (!shader.CreateFromFile(VERTEX_SHADER_PATH, FRAGMENT_SHADER_PATH)) return EXIT_FAILURE;
 
-    Texture brickTexture(BRICK_TEXTURE_PATH);
-    Texture groundTexture(GROUND_TEXTURE_PATH);
-    if (!brickTexture.Load() || !groundTexture.Load()) return EXIT_FAILURE;
+    rats::Maze maze(CELL_SIZE, WALL_HEIGHT);
+    if (!maze.SetWallTexture(WALL_TEXTURE_PATH) ||
+        !maze.SetFloorTexture(FLOOR_TEXTURE_PATH) ||
+        !maze.SetCeilingTexture(CEILING_TEXTURE_PATH)) {
+        return EXIT_FAILURE;
+    }
 
-    Camera camera(glm::vec3(0.0f, 0.5f, 3.0f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, 0.0f, 3.0f, 0.1f);
+    const MockMaze mock(MOCK_MAZE);
+    if (!maze.Build(rats::ToMazeLayout(mock))) {
+        std::fprintf(stderr, "Maze: layout invalido\n");
+        return EXIT_FAILURE;
+    }
+
+    // Começa no centro da célula (0, 0), na altura dos olhos, olhando para +X
+    glm::vec3 start = maze.CellCenter(0, 0);
+    start.y = WALL_HEIGHT * 0.5f;
+    Camera camera(start, glm::vec3(0.0f, 1.0f, 0.0f), 0.0f, 0.0f, 3.0f, 0.1f);
 
     shader.Use();
     glUniform1i(shader.GetUniformTexture(), 0); // sampler -> GL_TEXTURE0
 
     float lastTime = static_cast<float>(glfwGetTime());
-    float angle = 0.0f;
 
     for (long frame = 0; !window.ShouldClose() && frame != maxFrames; ++frame) {
         float now = static_cast<float>(glfwGetTime());
@@ -134,27 +145,13 @@ int main(int argc, char** argv)
 
         shader.Use();
 
-        // Projeção e câmera antes dos draw calls
         glm::mat4 projection = glm::perspective(glm::radians(60.0f), window.GetAspectRatio(), 0.1f, 100.0f);
         glUniformMatrix4fv(shader.GetUniformProjection(), 1, GL_FALSE, glm::value_ptr(projection));
         glUniformMatrix4fv(shader.GetUniformView(), 1, GL_FALSE, glm::value_ptr(camera.CalculateViewMatrix()));
 
-        // Cubo girando sobre o eixo Y (45 graus/segundo)
-        angle += 45.0f * deltaTime;
-        if (angle >= 360.0f) angle -= 360.0f;
-
         glm::mat4 model(1.0f);
-        model = glm::translate(model, glm::vec3(0.0f, 0.5f, 0.0f));
-        model = glm::rotate(model, glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
         glUniformMatrix4fv(shader.GetUniformModel(), 1, GL_FALSE, glm::value_ptr(model));
-        brickTexture.Use();
-        cube.Render();
-
-        // Chão
-        model = glm::mat4(1.0f);
-        glUniformMatrix4fv(shader.GetUniformModel(), 1, GL_FALSE, glm::value_ptr(model));
-        groundTexture.Use();
-        ground.Render();
+        maze.Render();
 
         glUseProgram(0);
         window.SwapBuffers();
