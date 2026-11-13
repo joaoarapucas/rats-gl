@@ -12,6 +12,7 @@
 
 #include "Camera.h"
 #include "Maze.h"
+#include "Rat.h"
 #include "Shader.h"
 #include "Window.h"
 
@@ -30,6 +31,15 @@ const float WALL_HEIGHT = 2.5f;
 const int MAZE_WIDTH = 8;
 const int MAZE_HEIGHT = 6;
 const amazing::GenAlgo MAZE_ALGORITHM = amazing::GenAlgo::DFS;
+
+// Rato: resolve o labirinto de (0, 0) até (largura - 1, altura - 1) e a câmera
+// percorre o caminho que ele fez.
+const amazing::SolveAlgo RAT_SOLVER = amazing::SolveAlgo::LeftWallFollower;
+const float RAT_MOVE_SPEED = 2.0f;   // células por segundo
+const float RAT_TURN_SPEED = 180.0f; // graus por segundo
+
+// false: ignora o rato e libera a câmera (WASD + mouse).
+const bool FOLLOW_RAT = true;
 
 } // namespace
 
@@ -56,17 +66,29 @@ int main(int argc, char** argv)
         return EXIT_FAILURE;
     }
 
-    amazing::Maze grid(MAZE_WIDTH, MAZE_HEIGHT);
-    grid.generate(MAZE_ALGORITHM);
-    if (!maze.Build(rats::ToMazeLayout(grid))) {
-        std::fprintf(stderr, "Maze: layout invalido\n");
+    maze.SetGenerator(MAZE_ALGORITHM);
+    if (!maze.Generate(MAZE_WIDTH, MAZE_HEIGHT)) {
+        std::fprintf(stderr, "Maze: dimensoes invalidas\n");
         return EXIT_FAILURE;
     }
 
-    // Começa no centro da célula (0, 0), na altura dos olhos, olhando para +X
-    glm::vec3 start = maze.CellCenter(0, 0);
-    start.y = WALL_HEIGHT * 0.5f;
-    Camera camera(start, glm::vec3(0.0f, 1.0f, 0.0f), 0.0f, 0.0f, 3.0f, 0.1f);
+    rats::Rat rat(RAT_SOLVER);
+    if (!rat.SetMoveSpeed(RAT_MOVE_SPEED) || !rat.SetTurnSpeed(RAT_TURN_SPEED)) {
+        std::fprintf(stderr, "Rat: velocidade invalida\n");
+        return EXIT_FAILURE;
+    }
+    if (!rat.Solve(*maze.GetGrid())) {
+        std::fprintf(stderr, "Rat: o solver nao encontrou a saida\n");
+    }
+
+    // Câmera na altura dos olhos, no centro da célula inicial
+    const float eyeHeight = WALL_HEIGHT * 0.5f;
+    auto ratEye = [&]() {
+        glm::vec3 eye = maze.GridToWorld(rat.GetPosition());
+        eye.y = eyeHeight;
+        return eye;
+    };
+    Camera camera(ratEye(), glm::vec3(0.0f, 1.0f, 0.0f), rat.GetYaw(), 0.0f, 3.0f, 0.1f);
 
     shader.Use();
     glUniform1i(shader.GetUniformTexture(), 0); // sampler -> GL_TEXTURE0
@@ -79,8 +101,13 @@ int main(int argc, char** argv)
         lastTime = now;
 
         glfwPollEvents();
-        camera.KeyControl(window.GetKeys(), deltaTime);
-        camera.MouseControl(window.GetXChange(), window.GetYChange());
+        if (FOLLOW_RAT) {
+            rat.Update(deltaTime);
+            camera.SetPose(ratEye(), rat.GetYaw());
+        } else {
+            camera.KeyControl(window.GetKeys(), deltaTime);
+            camera.MouseControl(window.GetXChange(), window.GetYChange());
+        }
 
         glClearColor(1.0f, 0.75f, 0.79f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

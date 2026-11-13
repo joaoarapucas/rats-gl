@@ -67,10 +67,22 @@ bool Maze::SetCeilingTexture(const std::string& path)
     return LoadTexture(path, ceilingTexture);
 }
 
+bool Maze::Generate(int width, int height)
+{
+    if (width <= 0 || height <= 0) return false;
+
+    auto newGrid = std::make_unique<amazing::Maze>(width, height);
+    newGrid->generate(generator);
+    if (!Build(ToMazeLayout(*newGrid))) return false;
+    grid = std::move(newGrid);
+    return true;
+}
+
 bool Maze::Build(const MazeLayout& newLayout)
 {
     if (!newLayout.IsValid()) return false;
     layout = newLayout;
+    grid.reset(); // a grade antiga não corresponde mais ao layout
     Upload();
     return true;
 }
@@ -132,7 +144,12 @@ void Maze::Clear()
 
 glm::vec3 Maze::CellCenter(int x, int y) const
 {
-    return glm::vec3((x + 0.5f) * cellSize, 0.0f, (y + 0.5f) * cellSize);
+    return GridToWorld(glm::vec2(static_cast<float>(x), static_cast<float>(y)));
+}
+
+glm::vec3 Maze::GridToWorld(glm::vec2 gridPosition) const
+{
+    return glm::vec3((gridPosition.x + 0.5f) * cellSize, 0.0f, (gridPosition.y + 0.5f) * cellSize);
 }
 
 } // namespace rats

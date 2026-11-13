@@ -59,7 +59,8 @@ OBJS     := $(CXX_SRCS:src/%.cpp=$(BUILDDIR)/%.o) $(C_SRCS:src/%.c=$(BUILDDIR)/%
 DEPS     := $(OBJS:.o=.d)
 
 # Mesma extensão do executável principal (.exe no Windows)
-TEST_TARGET := $(BUILDDIR)/maze_geometry_test$(suffix $(TARGET))
+GEOMETRY_TEST := $(BUILDDIR)/maze_geometry_test$(suffix $(TARGET))
+RAT_TEST      := $(BUILDDIR)/rat_test$(suffix $(TARGET))
 
 .PHONY: all run debug test clean FORCE
 
@@ -99,10 +100,14 @@ debug: LDFLAGS  += $(SANITIZERS)
 debug: clean $(TARGET)
 
 # Testes que não dependem de contexto OpenGL
-test: $(TEST_TARGET)
-	./$(TEST_TARGET)
+test: $(GEOMETRY_TEST) $(RAT_TEST)
+	./$(GEOMETRY_TEST)
+	./$(RAT_TEST)
 
-$(TEST_TARGET): tests/MazeGeometryTest.cpp $(BUILDDIR)/MazeGeometry.o $(AMAZING_LIB) | $(BUILDDIR)
+$(RAT_TEST): tests/RatTest.cpp $(BUILDDIR)/Rat.o $(AMAZING_LIB) | $(BUILDDIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $^ -o $@
+
+$(GEOMETRY_TEST): tests/MazeGeometryTest.cpp $(BUILDDIR)/MazeGeometry.o $(AMAZING_LIB) | $(BUILDDIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $^ -o $@
 
 # Limpa também o amazing: objetos compilados com flags diferentes (ex.: com e

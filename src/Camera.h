@@ -15,8 +15,14 @@ public:
     // turnSpeed em graus/pixel
     void MouseControl(float xChange, float yChange);
 
+    // Posiciona a câmera diretamente (ex.: seguindo um personagem).
+    // Ângulos em graus; pitch é limitado a [-89, 89].
+    void SetPose(const glm::vec3& newPosition, float newYaw, float newPitch = 0.0f);
+
     glm::mat4 CalculateViewMatrix() const;
     glm::vec3 GetPosition() const { return position; }
+    float GetYaw() const { return yaw; }
+    float GetPitch() const { return pitch; }
 
 private:
     void Update();

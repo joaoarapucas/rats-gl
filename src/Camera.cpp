@@ -48,6 +48,14 @@ void Camera::MouseControl(float xChange, float yChange)
     Update();
 }
 
+void Camera::SetPose(const glm::vec3& newPosition, float newYaw, float newPitch)
+{
+    position = newPosition;
+    yaw = newYaw;
+    pitch = glm::clamp(newPitch, -89.0f, 89.0f);
+    Update();
+}
+
 glm::mat4 Camera::CalculateViewMatrix() const
 {
     return glm::lookAt(position, position + front, up);
