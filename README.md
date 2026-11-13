@@ -1,6 +1,27 @@
 # rats-gl
 gambling game made in OpenGL and C++
 
+## Clonando
+
+O gerador de labirintos ([amazing](https://github.com/joaoarapucas/amazing)) é um
+git submodule em `external/amazing`:
+
+```bash
+git clone --recurse-submodules git@github.com:joaoarapucas/rats-gl.git
+# se já clonou sem os submodules:
+git submodule update --init
+```
+
+Para atualizar o amazing para a versão mais recente do repositório dele:
+
+```bash
+git submodule update --remote external/amazing
+make test
+git add external/amazing && git commit -m "chore: bump amazing"
+```
+
+O `make` do rats compila o amazing automaticamente (`external/amazing/build/libamazing.a`).
+
 ## Build
 
 ### Windows (MSYS2)

@@ -6,6 +6,8 @@
 #include <utility>
 #include <vector>
 
+#include <amazing/maze.h>
+
 #include "MazeGeometry.h"
 
 namespace {
@@ -206,6 +208,31 @@ void TestBoundsAndTexCoords()
     }
 }
 
+// A conversão copia os índices dos lados diretamente; a ordem precisa coincidir.
+static_assert(amazing::Cell::Top == rats::Top, "ordem dos lados diverge do amazing");
+static_assert(amazing::Cell::Right == rats::Right, "ordem dos lados diverge do amazing");
+static_assert(amazing::Cell::Bottom == rats::Bottom, "ordem dos lados diverge do amazing");
+static_assert(amazing::Cell::Left == rats::Left, "ordem dos lados diverge do amazing");
+
+void TestAmazingIntegration()
+{
+    for (amazing::GenAlgo algo : {amazing::GenAlgo::DFS, amazing::GenAlgo::Prim, amazing::GenAlgo::BinaryTree}) {
+        amazing::Maze grid(12, 7);
+        grid.generate(algo);
+
+        const MazeLayout layout = rats::ToMazeLayout(grid);
+        CHECK(layout.IsValid());
+        CHECK(layout.width == 12 && layout.height == 7);
+
+        bool same = true;
+        for (int y = 0; y < 7; ++y)
+            for (int x = 0; x < 12; ++x)
+                for (int side = 0; side < 4; ++side)
+                    if (layout.HasWall(x, y, static_cast<rats::Side>(side)) != grid.cell(x, y).walls[side]) same = false;
+        CHECK(same);
+    }
+}
+
 } // namespace
 
 int main()
@@ -217,6 +244,7 @@ int main()
     TestSharedWallEmittedOnce();
     TestPerfectMazeWallCount();
     TestBoundsAndTexCoords();
+    TestAmazingIntegration();
 
     std::printf("%d verificacoes, %d falhas\n", checks, failures);
     return failures == 0 ? 0 : 1;

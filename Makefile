@@ -36,7 +36,19 @@ ifeq ($(strip $(GLFW_LIBS)),)
   GLFW_LIBS := $(GLFW_FALLBACK)
 endif
 
-CPPFLAGS := -Iinclude -Isrc $(GLFW_CFLAGS) -MMD -MP
+# ---------------------------------------------------------------------------
+# amazing (gerador de labirintos), incluído como git submodule.
+#   Clonar:     git clone --recurse-submodules ...
+#   Atualizar:  git submodule update --remote external/amazing
+# ---------------------------------------------------------------------------
+AMAZING_DIR := external/amazing
+AMAZING_LIB := $(AMAZING_DIR)/build/libamazing.a
+
+ifeq ($(wildcard $(AMAZING_DIR)/Makefile),)
+  $(error Submodule $(AMAZING_DIR) ausente. Execute: git submodule update --init)
+endif
+
+CPPFLAGS := -Iinclude -Isrc -I$(AMAZING_DIR)/include $(GLFW_CFLAGS) -MMD -MP
 CFLAGS   := -O2
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic
 LDLIBS   := $(GLFW_LIBS) $(PLATFORM_LIBS)
@@ -49,12 +61,19 @@ DEPS     := $(OBJS:.o=.d)
 # Mesma extensão do executável principal (.exe no Windows)
 TEST_TARGET := $(BUILDDIR)/maze_geometry_test$(suffix $(TARGET))
 
-.PHONY: all run debug test clean
+.PHONY: all run debug test clean FORCE
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS)
+$(TARGET): $(OBJS) $(AMAZING_LIB)
 	$(CXX) $(LDFLAGS) $^ -o $@ $(LDLIBS)
+
+# Sempre delega ao Makefile do amazing, que recompila apenas o necessário.
+# O mesmo compilador e flags são repassados (inclui sanitizers no debug).
+$(AMAZING_LIB): FORCE
+	$(MAKE) -C $(AMAZING_DIR) lib CXX="$(CXX)" CXXFLAGS="$(CXXFLAGS)"
+
+FORCE:
 
 $(BUILDDIR)/%.o: src/%.cpp | $(BUILDDIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
@@ -83,10 +102,13 @@ debug: clean $(TARGET)
 test: $(TEST_TARGET)
 	./$(TEST_TARGET)
 
-$(TEST_TARGET): tests/MazeGeometryTest.cpp $(BUILDDIR)/MazeGeometry.o | $(BUILDDIR)
+$(TEST_TARGET): tests/MazeGeometryTest.cpp $(BUILDDIR)/MazeGeometry.o $(AMAZING_LIB) | $(BUILDDIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $^ -o $@
 
+# Limpa também o amazing: objetos compilados com flags diferentes (ex.: com e
+# sem sanitizers) não podem ser misturados no link.
 clean:
 	rm -rf $(BUILDDIR) rats rats.exe
+	$(MAKE) -C $(AMAZING_DIR) clean
 
 -include $(DEPS)
